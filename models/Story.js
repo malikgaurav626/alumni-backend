@@ -8,6 +8,7 @@ const storySchema = new mongoose.Schema({
   Name: { type: String, required: true },
   popularity: { type: Number, default: 0 },
   likedBy: [{ type: String }],
+  userId: { type: String, required: true }, // Change to String
 });
 
 const Story = mongoose.model("Story", storySchema);

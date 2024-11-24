@@ -33,6 +33,22 @@ const Student = require("./models/Student");
 const Alumni = require("./models/Alumni");
 const Story = require("./models/Story");
 const Advice = require("./models/Advice");
+const Job = require("./models/Job");
+const Admin = require("./models/Admin");
+
+const setupLikedStoriesForUser = async (userId) => {
+  try {
+    const stories = await Story.find();
+    const likedStories = stories
+      .sort(() => 0.5 - Math.random())
+      .slice(0, Math.floor(Math.random() * stories.length))
+      .map((story) => story._id);
+
+    await User.updateOne({ _id: userId }, { $set: { likedStories } });
+  } catch (err) {
+    console.error("Error setting up liked stories:", err);
+  }
+};
 
 // Set up multer for file uploads
 const storage = multer.diskStorage({
@@ -90,7 +106,7 @@ app.post("/login", async (req, res) => {
     }
 
     // Check if the user is an admin
-    user = await User.findOne({ id });
+    user = await Admin.findOne({ id });
     if (user) {
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
@@ -189,6 +205,7 @@ app.post("/register-alumni", upload.single("image"), async (req, res) => {
       image,
       role: "1", // Explicitly set the role to "1"
       graduation, // Add graduation field
+      jobs: [], // Initialize jobs as an empty array
     });
     await newAlumni.save();
 
@@ -213,16 +230,29 @@ app.post("/register-alumni", upload.single("image"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-// Create a new story
 app.post("/stories", async (req, res) => {
-  const { title, content, ERP, Name } = req.body;
+  const { title, content } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
 
   try {
+    // Fetch user information based on userId
+    let user = await Student.findOne({ id: userId });
+    if (!user) {
+      user = await Alumni.findOne({ id: userId });
+    }
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     const newStory = new Story({
       title,
       content,
-      ERP,
-      Name,
+      ERP: user.id,
+      Name: `${user.first_name} ${user.last_name}`,
+      userId: user._id, // Save userId
     });
     await newStory.save();
 
@@ -239,6 +269,27 @@ app.get("/home-stories", async (req, res) => {
   try {
     const stories = await Story.find();
     res.json(stories);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get all stories without pagination
+app.get("/all-stories", async (req, res) => {
+  try {
+    const stories = await Story.find();
+    res.json(stories);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+// Get all advices without pagination
+app.get("/all-advices", async (req, res) => {
+  try {
+    const advices = await Advice.find();
+    res.json(advices);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
@@ -263,32 +314,6 @@ app.get("/stories", async (req, res) => {
     const totalPages = Math.ceil(totalStories / limit);
 
     res.json({ stories, totalPages, currentPage: page });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// Get liked stories for a user
-app.get("/stories/likedstories", async (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const decoded = jwt.verify(token, "your_jwt_secret");
-  const userId = decoded.id;
-
-  try {
-    // Convert userId to ObjectId if it is a valid ObjectId string
-    const isValidObjectId = mongoose.Types.ObjectId.isValid(userId);
-    const query = isValidObjectId
-      ? { _id: mongoose.Types.ObjectId(userId) }
-      : { id: userId };
-
-    const user = await User.findOne(query);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const likedStories = user.likedStories || [];
-    res.json(likedStories);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
@@ -430,7 +455,6 @@ app.get("/user/:id", async (req, res) => {
   }
 });
 
-// Create a new advice
 app.post("/advices", async (req, res) => {
   const { title, content, category } = req.body;
   const token = req.headers.authorization.split(" ")[1];
@@ -454,6 +478,7 @@ app.post("/advices", async (req, res) => {
       ERP: user.id,
       Name: `${user.first_name} ${user.last_name}`,
       category,
+      userId: user._id, // Save userId
     });
     await newAdvice.save();
 
@@ -573,6 +598,343 @@ app.delete("/advices/:id", async (req, res) => {
   }
 });
 
+app.get("/alumni/profile", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const alumni = await Alumni.findOne({ id: userId });
+
+    if (!alumni) {
+      return res.status(404).json({ error: "Alumni not found" });
+    }
+
+    res.json(alumni);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/advices/alumni", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const advices = await Advice.find({ ERP: userId });
+    res.json({ advices });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+app.get("/stories/alumni", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const stories = await Story.find({ ERP: userId });
+    res.json({ stories });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/alumni/jobs", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const alumni = await Alumni.findOne({ id: userId });
+
+    if (!alumni) {
+      return res.status(404).json({ error: "Alumni not found" });
+    }
+
+    res.json(alumni.jobs);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.put("/alumni/profile", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+  const { first_name, last_name, sex, degree, major, graduation, image } =
+    req.body;
+
+  try {
+    const alumni = await Alumni.findOne({ id: userId });
+
+    if (!alumni) {
+      return res.status(404).json({ error: "Alumni not found" });
+    }
+
+    alumni.first_name = first_name || alumni.first_name;
+    alumni.last_name = last_name || alumni.last_name;
+    alumni.sex = sex || alumni.sex;
+    alumni.degree = degree || alumni.degree;
+    alumni.major = major || alumni.major;
+    alumni.graduation = graduation || alumni.graduation;
+    alumni.image = image || alumni.image;
+
+    await alumni.save();
+
+    res.json({ message: "Profile updated successfully", alumni });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Create a new job
+app.post("/alumni/jobs", async (req, res) => {
+  const { employer, role, date_start, date_end } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const alumni = await Alumni.findOne({ id: userId });
+    if (!alumni) {
+      return res.status(404).json({ message: "Alumni not found" });
+    }
+
+    const newJob = new Job({
+      employer,
+      role,
+      date_start,
+      date_end,
+      alumni_id: alumni._id,
+    });
+    await newJob.save();
+
+    alumni.jobs.push(newJob._id);
+    await alumni.save();
+
+    res.status(201).json({ message: "Job created successfully", job: newJob });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Update a job
+app.patch("/alumni/jobs/:id", async (req, res) => {
+  const { employer, role, date_start, date_end } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const job = await Job.findById(req.params.id);
+    if (!job) {
+      return res.status(404).json({ message: "Job not found" });
+    }
+
+    const alumni = await Alumni.findOne({ id: userId });
+    if (!alumni || !alumni.jobs.includes(job._id)) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    job.employer = employer || job.employer;
+    job.role = role || job.role;
+    job.date_start = date_start || job.date_start;
+    job.date_end = date_end || job.date_end;
+
+    await job.save();
+
+    res.json({ message: "Job updated successfully", job });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Delete a job
+app.delete("/alumni/jobs/:id", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const job = await Job.findById(req.params.id);
+    if (!job) {
+      return res.status(404).json({ message: "Job not found" });
+    }
+
+    const alumni = await Alumni.findOne({ id: userId });
+    if (!alumni || !alumni.jobs.includes(job._id)) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    await job.remove();
+    alumni.jobs.pull(job._id);
+    await alumni.save();
+
+    res.json({ message: "Job deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get student profile
+app.get("/student/profile", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const student = await Student.findOne({ id: userId });
+
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    res.json(student);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Update student profile
+app.put("/student/profile", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+  const { first_name, last_name, sex, degree, major, graduation, image } =
+    req.body;
+
+  try {
+    const student = await Student.findOne({ id: userId });
+
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    student.first_name = first_name || student.first_name;
+    student.last_name = last_name || student.last_name;
+    student.sex = sex || student.sex;
+    student.degree = degree || student.degree;
+    student.major = major || student.major;
+    student.graduation = graduation || student.graduation;
+    student.image = image || student.image;
+
+    await student.save();
+
+    res.json({ message: "Profile updated successfully", student });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Promote a student
+app.patch("/student/promotion", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const student = await Student.findOne({ id: userId });
+
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    // Update the student's status or any other relevant fields
+    student.status = "promoted"; // Example field update
+    await student.save();
+
+    res.json({ message: "Student promoted successfully", student });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get all profiles
+app.get("/all-profiles", async (req, res) => {
+  try {
+    const students = await Student.find();
+    const alumni = await Alumni.find();
+    const admins = await Admin.find();
+
+    const profiles = [
+      ...students.map((student) => ({
+        id: student.id,
+        name: `${student.first_name} ${student.last_name}`,
+        role: "student",
+      })),
+      ...alumni.map((alumnus) => ({
+        id: alumnus.id,
+        name: `${alumnus.first_name} ${alumnus.last_name}`,
+        role: "alumni",
+      })),
+      ...admins.map((admin) => ({
+        id: admin.id,
+        name: "Admin",
+        role: "admin",
+      })),
+    ];
+
+    res.json(profiles);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Delete a student
+app.delete("/student/:id", async (req, res) => {
+  try {
+    const student = await Student.findOneAndDelete({ id: req.params.id });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    res.json({ message: "Student deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Delete an alumnus
+app.delete("/alumni/:id", async (req, res) => {
+  try {
+    const alumnus = await Alumni.findOneAndDelete({ id: req.params.id });
+    if (!alumnus) {
+      return res.status(404).json({ message: "Alumnus not found" });
+    }
+    res.json({ message: "Alumnus deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Delete an admin
+app.delete("/admin/:id", async (req, res) => {
+  try {
+    const admin = await Admin.findOneAndDelete({ id: req.params.id });
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+    res.json({ message: "Admin deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 // Start server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);

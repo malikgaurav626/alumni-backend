@@ -11,6 +11,7 @@ const alumniSchema = new mongoose.Schema({
   image: { type: String, required: true }, // Store the image path or URL
   role: { type: String, default: "1" }, // Add role field with default value "1"
   graduation: { type: String, required: true }, // Add graduation field
+  jobs: [{ type: mongoose.Schema.Types.ObjectId, ref: "Job" }], // Reference to jobs
 });
 
 const Alumni = mongoose.model("Alumni", alumniSchema);

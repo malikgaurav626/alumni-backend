@@ -9,6 +9,7 @@ const adviceSchema = new mongoose.Schema({
   category: { type: String, required: true },
   popularity: { type: Number, default: 0 },
   likedBy: [{ type: String }],
+  userId: { type: String, required: true }, // Change to String
 });
 
 const Advice = mongoose.model("Advice", adviceSchema);
