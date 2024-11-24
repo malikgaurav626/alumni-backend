@@ -1,0 +1,30 @@
+{
+  "name": "private-backend",
+  "version": "1.0.0",
+  "description": "Backend for managing advices, alumni, students, and stories",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "addRandomAdvices": "node addRandomAdvices.js",
+    "addRandomAlumni": "node addRandomAlumni.js",
+    "addRandomLikedAdvices": "node addRandomLikedAdvices.js",
+    "addRandomStories": "node addRandomStories.js",
+    "copyToUsers": "node copyToUsers.js",
+    "setUpLikedStories": "node setUpLikedStories.js",
+    "updateAlumni": "node updateAlumni.js"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^7.6.0",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.19.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^8.5.1",
+    "mongoose": "^6.7.0",
+    "multer": "^1.4.5-lts.1",
+    "path": "^0.12.7"
+  },
+  "author": "malikgaurav626",
+  "license": "MIT"
+}
