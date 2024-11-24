@@ -939,3 +939,6 @@ app.delete("/admin/:id", async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+app.get("/keep-alive", (req, res) => {
+  res.status(200).json({ message: "Server is alive" });
+});
