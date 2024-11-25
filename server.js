@@ -35,6 +35,9 @@ const Story = require("./models/Story");
 const Advice = require("./models/Advice");
 const Job = require("./models/Job");
 const Admin = require("./models/Admin");
+const Post = require("./models/Post");
+const Fundraiser = require("./models/Fundraiser");
+const BugReport = require("./models/BugReport");
 
 const setupLikedStoriesForUser = async (userId) => {
   try {
@@ -935,6 +938,330 @@ app.delete("/admin/:id", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// Create a new post
+app.post("/posts", async (req, res) => {
+  const { content } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const user = await Student.findOne({ id: userId });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const newPost = new Post({
+      content,
+      userId: user._id,
+      userName: `${user.first_name} ${user.last_name}`,
+    });
+    await newPost.save();
+
+    res.status(201).json(newPost);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get all posts
+// Get all posts with pagination and sorting
+app.get("/posts", async (req, res) => {
+  const { page = 1, limit = 10, sort = "recent" } = req.query;
+  const skip = (page - 1) * limit;
+
+  try {
+    let sortOption = {};
+    if (sort === "recent") {
+      sortOption = { createdAt: -1 };
+    } else if (sort === "hot") {
+      sortOption = { likes: -1 };
+    } else if (sort === "oldest") {
+      sortOption = { createdAt: 1 };
+    }
+
+    const posts = await Post.find()
+      .sort(sortOption)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const totalPosts = await Post.countDocuments();
+    const totalPages = Math.ceil(totalPosts / limit);
+
+    res.json({ posts, totalPages, currentPage: parseInt(page) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Like a post
+app.post("/posts/:id/like", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const postId = req.params.id;
+
+    // Ensure userId and postId are valid ObjectId
+    if (
+      !mongoose.Types.ObjectId.isValid(userId) ||
+      !mongoose.Types.ObjectId.isValid(postId)
+    ) {
+      return res.status(400).json({ message: "Invalid user ID or post ID" });
+    }
+
+    const userObjectId = mongoose.Types.ObjectId(userId);
+    const postObjectId = mongoose.Types.ObjectId(postId);
+
+    const post = await Post.findById(postObjectId);
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    if (post.likes.includes(userObjectId)) {
+      post.likes.pull(userObjectId);
+    } else {
+      post.likes.push(userObjectId);
+    }
+
+    await post.save();
+    res.json(post);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+// Comment on a post
+app.post("/posts/:id/comment", async (req, res) => {
+  const { content } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const user = await Student.findOne({ id: userId });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    const comment = {
+      userId: user._id,
+      userName: `${user.first_name} ${user.last_name}`,
+      content,
+    };
+
+    post.comments.push(comment);
+    await post.save();
+
+    res.json(post);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Create a new fundraiser (admin only)
+app.post("/fundraisers", async (req, res) => {
+  const { title, description, goalAmount } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const admin = await Admin.findOne({ id: userId });
+    if (!admin) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    const newFundraiser = new Fundraiser({
+      title,
+      description,
+      goalAmount,
+      createdBy: admin._id,
+    });
+    await newFundraiser.save();
+
+    res.status(201).json(newFundraiser);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get all fundraisers
+app.get("/fundraisers", async (req, res) => {
+  try {
+    const fundraisers = await Fundraiser.find().sort({ createdAt: -1 });
+    res.json(fundraisers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.delete("/fundraisers/:id", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const admin = await Admin.findOne({ id: userId });
+    if (!admin) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    const fundraiserId = req.params.id;
+    const fundraiser = await Fundraiser.findById(fundraiserId);
+    if (!fundraiser) {
+      return res.status(404).json({ message: "Fundraiser not found" });
+    }
+
+    // Delete the fundraiser using deleteOne or findByIdAndDelete
+    await Fundraiser.findByIdAndDelete(fundraiserId); // or fundraiser.deleteOne() can also be used
+
+    res.status(200).json({ message: "Fundraiser deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.put("/fundraisers/:id", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const admin = await Admin.findOne({ id: userId });
+    if (!admin) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    const fundraiserId = req.params.id;
+    const { title, description, goalAmount } = req.body;
+    const fundraiser = await Fundraiser.findByIdAndUpdate(
+      fundraiserId,
+      { title, description, goalAmount },
+      { new: true }
+    );
+
+    if (!fundraiser) {
+      return res.status(404).json({ message: "Fundraiser not found" });
+    }
+
+    res.status(200).json(fundraiser);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Create a new bug report
+app.post("/bug-reports", async (req, res) => {
+  const { title, description } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const newBugReport = new BugReport({
+      title,
+      description,
+      reportedBy: userId,
+    });
+    await newBugReport.save();
+
+    res.status(201).json(newBugReport);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Create a new bug report
+app.post("/bug-reports", async (req, res) => {
+  const { title, description } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    // Ensure userId is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    const newBugReport = new BugReport({
+      title,
+      description,
+      reportedBy: userId, // Use the id field directly
+    });
+    await newBugReport.save();
+
+    res.status(201).json(newBugReport);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get all bug reports (admin only)
+app.get("/bug-reports", async (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const admin = await Admin.findOne({ id: userId });
+    if (!admin) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    const bugReports = await BugReport.find().sort({ createdAt: -1 });
+    res.json(bugReports);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Update the status of a bug report (admin only)
+app.put("/bug-reports/:id", async (req, res) => {
+  const { status } = req.body;
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = jwt.verify(token, "your_jwt_secret");
+  const userId = decoded.id;
+
+  try {
+    const admin = await Admin.findOne({ id: userId });
+    if (!admin) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    const bugReport = await BugReport.findById(req.params.id);
+    if (!bugReport) {
+      return res.status(404).json({ message: "Bug report not found" });
+    }
+
+    bugReport.status = status;
+    await bugReport.save();
+
+    res.json(bugReport);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // Start server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
